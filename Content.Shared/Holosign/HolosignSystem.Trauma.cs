@@ -5,10 +5,10 @@ using Content.Shared.Tag;
 using Robust.Shared.Map;
 using Robust.Shared.Physics.Components;
 
-namespace Content.Server.Holosign;
+namespace Content.Shared.Holosign;
 
 /// <summary>
-/// Trauma - helper function for Holosign rework
+/// Trauma - helper functions for Holosign rework
 /// </summary>
 public sealed partial class HolosignSystem
 {
@@ -17,6 +17,7 @@ public sealed partial class HolosignSystem
     [Dependency] private readonly TagSystem _tag = default!;
     [Dependency] private readonly IMapManager _mapMan = default!;
 
+    // FIXME: one of these is causing puddles to block projectors??
     private const int BlockMask = (int) (
         CollisionGroup.Impassable |
         CollisionGroup.LowImpassable |
@@ -30,7 +31,7 @@ public sealed partial class HolosignSystem
         _physicsQuery = GetEntityQuery<PhysicsComponent>();
     }
 
-    private EntityCoordinates? CheckCoords(Entity<HolosignProjectorComponent> ent, BeforeRangedInteractEvent args)
+    private EntityCoordinates? CheckCoords(Entity<HolosignProjectorComponent> ent, ref BeforeRangedInteractEvent args)
     {
         // places the holographic sign at the click location, snapped to grid.
         var coords = args.ClickLocation.SnapToGrid(EntityManager);
@@ -50,7 +51,8 @@ public sealed partial class HolosignSystem
                 return null;
         }
 
-        return _powerCell.TryUseCharge(ent.Owner, ent.Comp.ChargeUse, user: args.User) // if no battery or no charge, doesn't work
+        // if no battery or no charge, doesn't work
+        return _powerCell.TryUseCharge(ent.Owner, ent.Comp.ChargeUse, user: args.User, predicted: true)
             ? coords
             : null;
     }
