@@ -3203,3 +3203,12 @@ Entries:
   id: 387
   time: '2026-02-28T16:57:08.0000000+00:00'
   url: https://github.com/Trauma-Station/Trauma-Station/pull/914
+- author: TurboTrackerss14
+  changes:
+  - type: Remove
+    message: >-
+      removed the human only requirement from command and dignitary at armoks
+      behest.
+  id: 388
+  time: '2026-02-28T18:03:24.0000000+00:00'
+  url: https://github.com/Trauma-Station/Trauma-Station/pull/916
