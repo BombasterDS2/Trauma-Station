@@ -3365,3 +3365,10 @@ Entries:
   id: 404
   time: '2026-03-02T00:01:16.0000000+00:00'
   url: https://github.com/Trauma-Station/Trauma-Station/pull/694
+- author: deltanedas
+  changes:
+  - type: Add
+    message: Brought back putting anything in burgers!
+  id: 405
+  time: '2026-03-02T11:09:04.0000000+00:00'
+  url: https://github.com/Trauma-Station/Trauma-Station/pull/947
