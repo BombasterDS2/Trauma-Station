@@ -3614,3 +3614,12 @@ Entries:
   id: 428
   time: '2026-03-05T09:40:04.0000000+00:00'
   url: https://github.com/Trauma-Station/Trauma-Station/pull/1028
+- author: NoElkaTheGod, deltanedas
+  changes:
+  - type: Tweak
+    message: >-
+      Thief no longer has objectives, it's a freeform antag now, steal whatever
+      you want.
+  id: 429
+  time: '2026-03-05T14:42:07.0000000+00:00'
+  url: https://github.com/Trauma-Station/Trauma-Station/pull/995
