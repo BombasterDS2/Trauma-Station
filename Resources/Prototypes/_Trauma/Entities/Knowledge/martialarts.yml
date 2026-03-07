@@ -8,12 +8,18 @@
     state: icon
   - type: CanPerformCombo
     roundstartCombos:
+    - CQCConsecutiveSimple
+    - CQCPressureSimple
+    - CQCRestrainSimple
+    - CQCKickSimple
+    - CQCSlamSimple
     - CQCConsecutive
     - CQCPressure
     - CQCRestrain
     - CQCKick
     - CQCSlam
     - CQCConsecutiveAdvanced
+    - CQCKickAdvanced
 
 - type: entity
   parent: MartialArtCQC
@@ -72,7 +78,7 @@
     - SpinKick
     - KickUp
   - type: FastSpeed
-    speedModifier: 2
+    speedModifier: 1
 
 - type: entity
   parent: BaseMartialArtsKnowledge

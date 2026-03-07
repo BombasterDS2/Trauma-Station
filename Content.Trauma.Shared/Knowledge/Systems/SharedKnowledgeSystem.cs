@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-using System.Diagnostics.CodeAnalysis;
-using Content.Shared._EinsteinEngines.Language.Components;
 using Content.Shared._EinsteinEngines.Language.Systems;
-using Content.Shared.Bed.Sleep;
 using Content.Shared.Body;
-using Content.Shared.Construction;
-using Content.Shared.Damage.Components;
-using Content.Shared.Damage.Systems;
 using Content.Shared.Mind.Components;
 using Content.Shared.Popups;
 using Content.Shared.Random.Helpers;
@@ -18,10 +12,7 @@ using Content.Trauma.Common.Knowledge.Systems;
 using Content.Trauma.Common.MartialArts;
 using Content.Trauma.Common.Silicons.Borgs;
 using Robust.Shared.Containers;
-using Robust.Shared.Map.Components;
-using Robust.Shared.Physics;
 using Robust.Shared.Prototypes;
-using Robust.Shared.Random;
 using Robust.Shared.Timing;
 using Robust.Shared.Utility;
 
@@ -32,7 +23,6 @@ namespace Content.Trauma.Shared.Knowledge.Systems;
 /// </summary>
 public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
 {
-    //[Dependency] private readonly DamageableSystem _damageable = default!;
     [Dependency] private readonly IGameTiming _timing = default!;
     [Dependency] protected readonly IPrototypeManager _proto = default!;
     [Dependency] private readonly SharedContainerSystem _container = default!;
@@ -64,10 +54,11 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     public override void Initialize()
     {
         base.Initialize();
+        InitializeConstruction();
+        InitializeInjector();
         InitializeLanguage();
         InitializeMartialArts();
         InitializeOnWear();
-        InitializeConstruction();
         InitializeShooting();
 
         SubscribeLocalEvent<KnowledgeContainerComponent, ComponentStartup>(OnContainerStartup);
@@ -192,10 +183,10 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
 
     private void OnAddExperience(Entity<KnowledgeHolderComponent> ent, ref AddExperienceEvent args)
     {
-        if (GetContainer(ent) is not {} brain)
+        if (GetContainer(ent) is not { } brain)
             return;
 
-        AddExperience(brain, args.KnowledgeType, args.Experience, popup: args.Popup);
+        AddExperience(brain, args.KnowledgeType, args.Experience, args.LevelCap, popup: args.Popup);
     }
 
     private void OnPrototypesReloaded(PrototypesReloadedEventArgs args)
@@ -220,10 +211,10 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
         }
     }
 
-    public void AddExperience(Entity<KnowledgeContainerComponent> ent, [ForbidLiteral] EntProtoId id, int xp, bool popup = true)
+    public void AddExperience(Entity<KnowledgeContainerComponent> ent, [ForbidLiteral] EntProtoId id, int xp, int levelCap = 100, bool popup = true)
     {
         /* FIXME: xp gaining needs to be reworked to be less shit, each source needs to say the mastery level it can raise up to
-        if (GetKnowledge(ent, id) is not {} unit)
+        if (GetKnowledge(ent, id) is not { } unit)
         {
             // if you don't have it, you have a small change to learn it when gaining some xp
             if (SharedRandomExtensions.PredictedProb(_timing, _learnChance, GetNetEntity(ent)))
@@ -231,7 +222,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
             return;
         }
 
-        if (ent.Comp.Holder is {} holder)
+        if (unit.Comp.Level < levelCap && ent.Comp.Holder is { } holder)
         {
             AddExperience(unit, holder, xp);
 
@@ -244,7 +235,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     public void AddExperience(Entity<KnowledgeComponent> ent, EntityUid target, int added)
     {
         var now = _timing.CurTime;
-        if (now < ent.Comp.TimeToNextExperience)
+        if (now < ent.Comp.TimeToNextExperience || ent.Comp.Level >= 100)
             return;
 
         ent.Comp.TimeToNextExperience = now + TimeSpan.FromSeconds(5);
@@ -262,45 +253,36 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
         var getMastery = GetMastery(ent.Comp);
         (int, bool) rollResult = (0, false);
 
+        // If we don't have enough experience or level is max, return.
         if (ent.Comp.Experience < ent.Comp.ExperienceCost || ent.Comp.Level >= 100)
             return false;
 
+        // This should roll as many times as experience cached experience.
         int timesToRoll = ent.Comp.Experience / ent.Comp.ExperienceCost;
         ent.Comp.Experience -= ent.Comp.ExperienceCost * timesToRoll;
         (int, bool) rollInnard;
         for (int i = 0; i < timesToRoll && ent.Comp.Level < 100; i++)
         {
-            int diceType = DiceDictionary(ent);
-            rollInnard = RollPenetrating(target, diceType);
+            rollInnard = RollPenetrating(ent);
             rollResult = (rollInnard.Item1, rollInnard.Item2 || rollResult.Item2);
             ent.Comp.Level += rollResult.Item1;
         }
+
+        if (ent.Comp.Level > 100) // Ensures Level doesn't go above 100.
+            ent.Comp.Level = 100;
+
+        // Controls client popup whatnot when you level up.
         if (rollResult.Item2)
             _popup.PopupClient(Loc.GetString("knowledge-level-epiphany", ("knowledge", Name(ent))), target, target, PopupType.Medium);
 
-        if (ent.Comp.Level > 100)
-            ent.Comp.Level = 100;
-        Dirty(ent);
-
-        if (getMastery != GetMastery(ent.Comp) && !rollResult.Item2)
+        if (getMastery != GetMastery(ent.Comp.Level) && !rollResult.Item2)
         {
             _popup.PopupClient(Loc.GetString("knowledge-level-up-popup", ("knowledge", Name(ent)), ("mastery", GetMasteryString(ent).ToLower())), target, target, PopupType.Medium);
         }
+        else if (!rollResult.Item2)
+            _popup.PopupClient(Loc.GetString("knowledge-level-more", ("knowledge", Name(ent))), target, target, PopupType.Medium);
 
         return true;
-    }
-
-    private int DiceDictionary(Entity<KnowledgeComponent> ent)
-    {
-        return ent.Comp.Level switch
-        {
-            >= 88 => 3,
-            >= 76 => 4,
-            >= 51 => 6,
-            >= 26 => 8,
-            >= 1 => 12,
-            _ => 20,
-        };
     }
 
     public (ProtoId<KnowledgeCategoryPrototype> Category, KnowledgeInfo Info) GetKnowledgeInfo(Entity<KnowledgeComponent> ent)
@@ -341,7 +323,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// </returns>
     public Entity<KnowledgeComponent>? EnsureKnowledge(Entity<KnowledgeContainerComponent> ent, [ForbidLiteral] EntProtoId id, int level = 0, bool popup = true)
     {
-        if (GetKnowledge(ent, id) is {} existing)
+        if (GetKnowledge(ent, id) is { } existing)
         {
             if (existing.Comp.Level < level)
             {
@@ -352,7 +334,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
         }
 
         PredictedTrySpawnInContainer(id, ent.Owner, KnowledgeContainerComponent.ContainerId, out var spawned);
-        if (spawned is not {} unit)
+        if (spawned is not { } unit)
         {
             Log.Error($"Failed to spawn knowledge {id} for {ToPrettyString(ent)}!");
             return null;
@@ -365,7 +347,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
         ent.Comp.KnowledgeDict[id] = unit;
         DirtyField(ent, ent.Comp, nameof(KnowledgeContainerComponent.KnowledgeDict));
 
-        if (ent.Comp.Holder is not {} holder)
+        if (ent.Comp.Holder is not { } holder)
             return (unit, comp); // added knowledge to a loose brain...
 
         var ev = new KnowledgeAddedEvent(ent, holder);
@@ -384,7 +366,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// </summary>
     public void AddKnowledgeUnits(EntityUid target, Dictionary<EntProtoId, int> knowledgeList, bool popup = true)
     {
-        if (GetContainer(target) is not {} ent)
+        if (GetContainer(target) is not { } ent)
             return;
 
         foreach (var (id, level) in knowledgeList)
@@ -402,9 +384,9 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// </summary>
     public EntityUid? RemoveKnowledge(EntityUid target, [ForbidLiteral] EntProtoId id, bool force = false)
     {
-        if (GetContainer(target) is not {} ent ||
-            ent.Comp.Holder is not {} holder ||
-            GetKnowledge(ent, id) is not {} unit ||
+        if (GetContainer(target) is not { } ent ||
+            ent.Comp.Holder is not { } holder ||
+            GetKnowledge(ent, id) is not { } unit ||
             unit.Comp.Unremoveable && !force)
             return null;
 
@@ -427,7 +409,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// Null if the target is not a knowledge container, or if knowledge unit wasn't found.
     /// </returns>
     public override Entity<KnowledgeComponent>? GetKnowledge(EntityUid target, [ForbidLiteral] EntProtoId id)
-        => GetContainer(target) is {} ent
+        => GetContainer(target) is { } ent
             ? GetKnowledge(ent, id)
             : null;
 
@@ -441,7 +423,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// </summary>
     public List<Entity<KnowledgeComponent>>? TryGetAllKnowledgeUnits(EntityUid target)
     {
-        if (GetContainer(target) is not {} ent)
+        if (GetContainer(target) is not { } ent)
             return null;
 
         var found = new List<Entity<KnowledgeComponent>>();
@@ -457,9 +439,9 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// <summary>
     /// Returns the first knowledge entity of the target that has a given component.
     /// </summary>
-    public EntityUid? HasKnowledgeComp<T>(EntityUid target) where T: IComponent
+    public EntityUid? HasKnowledgeComp<T>(EntityUid target) where T : IComponent
     {
-        if (GetContainer(target)?.Comp.Container is not {} container)
+        if (GetContainer(target)?.Comp.Container is not { } container)
             return null;
 
         var query = GetEntityQuery<T>();
@@ -475,9 +457,9 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// <summary>
     /// Returns all knowledge entities that have a required component.
     /// </summary>
-    public List<Entity<T, KnowledgeComponent>>? GetKnowledgeWith<T>(EntityUid target) where T: IComponent
+    public List<Entity<T, KnowledgeComponent>>? GetKnowledgeWith<T>(EntityUid target) where T : IComponent
     {
-        if (GetContainer(target)?.Comp.Container is not {} container)
+        if (GetContainer(target)?.Comp.Container is not { } container)
             return null;
 
         var knowledgeEnts = new List<Entity<T, KnowledgeComponent>>();
@@ -503,14 +485,14 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
 
     public override void ClearKnowledge(EntityUid target, bool deleteAll)
     {
-        if (GetContainer(target) is not {} ent)
+        if (GetContainer(target) is not { } ent)
             return;
 
         ent.Comp.KnowledgeDict.Clear();
         DirtyField(ent, ent.Comp, nameof(KnowledgeContainerComponent.KnowledgeDict));
         ChangeMartialArts(ent, target, null);
         ChangeLanguage(ent, null);
-        if (deleteAll && ent.Comp.Container is {} container)
+        if (deleteAll && ent.Comp.Container is { } container)
         {
             foreach (var entity in container.ContainedEntities)
             {
@@ -529,7 +511,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
             return (uid, comp);
 
         // otherwise try use the cached brain
-        if (_holderQuery.CompOrNull(uid)?.KnowledgeEntity is not {} ent || !ent.IsValid())
+        if (_holderQuery.CompOrNull(uid)?.KnowledgeEntity is not { } ent || !ent.IsValid())
             return null;
 
         return (ent, _containerQuery.Comp(ent));
@@ -538,9 +520,9 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
     /// <summary>
     /// Relays an event to all knowledge entities a mob has.
     /// </summary>
-    public void RelayEvent<T>(Entity<KnowledgeHolderComponent> ent, ref T args) where T: notnull
+    public void RelayEvent<T>(Entity<KnowledgeHolderComponent> ent, ref T args) where T : notnull
     {
-        if (GetContainer(ent)?.Comp.Container is not {} container)
+        if (GetContainer(ent)?.Comp.Container is not { } container)
             return;
 
         foreach (var unit in container.ContainedEntities)
@@ -603,8 +585,21 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
             _ => 0,
         };
 
+    private int DiceDictionary(Entity<KnowledgeComponent> ent, int shift = 0)
+    {
+        return (GetMastery(ent.Comp) + shift) switch
+        {
+            >= 5 => 3,
+            >= 4 => 4,
+            >= 3 => 6,
+            >= 2 => 8,
+            >= 1 => 12,
+            _ => 12,
+        };
+    }
+
     public override float SharpCurve(Entity<KnowledgeComponent> knowledge, int offset = 0, float inverseScale = 100.0f)
-        => SharpCurve(knowledge.Comp.Level, offset, inverseScale);
+        => SharpCurve(knowledge.Comp.Level + knowledge.Comp.TemporaryLevel, offset, inverseScale);
 
     public float SharpCurve(int level, int offset = 0, float inverseScale = 100f)
     {
@@ -614,27 +609,22 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
         return linear * linear;
     }
 
-    public (int, bool) RollPenetrating(EntityUid uid, int sides, bool didCritical = false)
+    public (int, bool) RollPenetrating(Entity<KnowledgeComponent> ent)
     {
-        var rand = SharedRandomExtensions.PredictedRandom(_timing, GetNetEntity(uid));
+        var rand = SharedRandomExtensions.PredictedRandom(_timing, GetNetEntity(ent.Owner));
+        var sides = DiceDictionary(ent);
         var isCritical = false;
         int penetratingRolls = 0;
         int currentRoll = rand.Next(1, sides + 1);
         int total = currentRoll;
-        int newSides = sides;
 
-        while (currentRoll == newSides && penetratingRolls < 10)
+        while (currentRoll == sides && penetratingRolls < 10)
         {
-            penetratingRolls++;
-            newSides = newSides switch
-            {
-                100 => 20,
-                20 => 6,
-                _ => newSides
-            };
-            currentRoll = rand.Next(1, newSides + 1);
+            sides = DiceDictionary(ent, penetratingRolls / 2);
+            currentRoll = rand.Next(1, sides + 1);
             total += currentRoll - 1;
             isCritical = true;
+            penetratingRolls++;
         }
 
         return (total, isCritical);
@@ -651,7 +641,7 @@ public abstract partial class SharedKnowledgeSystem : CommonKnowledgeSystem
 
     protected Entity<KnowledgeContainerComponent> EnsureKnowledgeContainer(Entity<KnowledgeHolderComponent> ent)
     {
-        if (GetContainer(ent) is {} brain)
+        if (GetContainer(ent) is { } brain)
             return brain;
 
         // if there's no brain store knowledge on the mob itself
