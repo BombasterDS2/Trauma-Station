@@ -3822,3 +3822,12 @@ Entries:
   id: 450
   time: '2026-03-07T16:02:32.0000000+00:00'
   url: https://github.com/Trauma-Station/Trauma-Station/pull/1097
+- author: assripper.
+  changes:
+  - type: Add
+    message: >-
+      replaced the boring invisibility on the abductor agents vest with a cool
+      randomly generated human disguise so they can blend in with crew
+  id: 451
+  time: '2026-03-07T18:06:37.0000000+00:00'
+  url: https://github.com/Trauma-Station/Trauma-Station/pull/1052
