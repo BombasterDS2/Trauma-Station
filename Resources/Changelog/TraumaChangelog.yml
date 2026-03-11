@@ -4190,3 +4190,10 @@ Entries:
   id: 493
   time: '2026-03-11T10:13:33.0000000+00:00'
   url: https://github.com/Trauma-Station/Trauma-Station/pull/1192
+- author: NoElkaTheGod
+  changes:
+  - type: Tweak
+    message: Improved the skill selection UI
+  id: 494
+  time: '2026-03-11T21:42:34.0000000+00:00'
+  url: https://github.com/Trauma-Station/Trauma-Station/pull/1195
